@@ -290,6 +290,11 @@ details > summary { cursor: pointer; min-height: 44px; display: flex; align-item
 main > .btn, main > form > .row > .btn { align-self: flex-start; }
 .drop.big { padding: 48px 16px; border-width: 2px; }
 .drop.big b { font-family: var(--display); font-size: 1.35rem; }
+.listed-on { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.listed-on .plat { min-height: 44px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--muted); font-weight: 600; cursor: pointer; }
+.listed-on .plat[aria-pressed="true"] { background: var(--plum); border-color: var(--plum); color: var(--on-plum); }
+.listed-on .plat[aria-pressed="true"]::before { content: "✓ "; }
+.listed-on .plat:disabled { cursor: default; opacity: .6; }
 
 </style>
 </head>
@@ -2608,7 +2613,8 @@ function itemCardHtml(it, bag) {
           <h3><button style="border:0;background:none;padding:0;text-align:left;cursor:pointer;font:inherit" data-act="edit" data-id="${esc(it.id)}" data-f="name">${esc(it.name || 'Untitled item')}</button></h3>
           <div class="row">${pending ? '<span class="chip">Not analyzed yet</span>' : ''}
             ${needs.length && !pending ? `<button class="chip warn" data-act="needs" data-id="${esc(it.id)}">Needs info: ${esc(needs.map((f) => (Core.FIELD_LABEL[f] || f).toLowerCase()).join(', '))}</button>` : ''}
-            ${it.category ? `<span class="chip">${esc(it.category)}</span>` : ''}</div>
+            ${it.category ? `<span class="chip">${esc(it.category)}</span>` : ''}
+            ${listedSummary(it)}</div>
         </div>
         <div class="row">${hangtag(L.price, p === 'vinted' ? 'Vinted list' : 'List price')}
           ${ro ? '' : `<div class="menu"><button class="icon-btn" data-act="menu" data-id="${esc(it.id)}" aria-label="More actions">⋯</button>${S.menu === it.id ? `<div class="menu-list">
@@ -2644,14 +2650,24 @@ function itemCardHtml(it, bag) {
   </article>`;
 }
 
+function listedSummary(it) {
+  const plats = new Set();
+  for (const u of it.units || []) if (u.status === 'listed') (u.listedOn || []).forEach((k) => plats.add(k));
+  if (!plats.size) return '';
+  return `<span class="chip plum">Listed on ${esc(Core.PLATFORMS.filter((k) => plats.has(k)).map((k) => Core.PLATFORM_LABEL[k]).join(', '))}</span>`;
+}
+
 function unitRowHtml(it, u) {
   const multi = (it.units || []).length > 1;
   const label = (multi ? 'Unit ' + u.n : 'Status') + (u.size ? ' · ' + u.size : '');
   const sel = `<select id="st-${esc(it.id)}-${u.n}" aria-label="${esc(label)}" data-change="unit-status" data-id="${esc(it.id)}" data-n="${u.n}" ${S.readOnly ? 'disabled' : ''}>
     ${Object.entries(STATUS_LABEL).map(([k, l]) => `<option value="${k}" ${u.status === k ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
   let extra = '';
-  if (u.status === 'listed') {
-    extra = Core.PLATFORMS.map((k) => `<label class="check small"><input type="checkbox" data-change="unit-listed" data-id="${esc(it.id)}" data-n="${u.n}" data-p="${k}" ${(u.listedOn || []).includes(k) ? 'checked' : ''}>${Core.PLATFORM_LABEL[k]}</label>`).join('');
+  if (u.status === 'draft' || u.status === 'listed') {
+    // Tapping a platform marks the unit listed there; clearing every platform returns it to draft.
+    const on = u.status === 'listed' ? (u.listedOn || []) : [];
+    extra = `<div class="listed-on" role="group" aria-label="${esc((multi ? 'Unit ' + u.n + ' listed on' : 'Listed on'))}"><span class="small muted">Listed on</span>${Core.PLATFORMS.map((k) =>
+      `<button class="plat" data-act="toggle-listed" data-id="${esc(it.id)}" data-n="${u.n}" data-p="${k}" aria-pressed="${on.includes(k)}" ${S.readOnly ? 'disabled' : ''}>${Core.PLATFORM_LABEL[k]}</button>`).join('')}</div>`;
   } else if (u.status === 'sold' && u.sale) {
     extra = `<span class="small">Sold ${money0(u.sale.price)} on ${esc(Core.PLATFORM_LABEL[u.sale.platform] || u.sale.platform)}, ${esc(fmtDate(u.sale.date))} · net <b class="num">${money(Core.realizedFor(u), 2)}</b></span>
       <button class="btn ghost small" data-act="undo-status" data-id="${esc(it.id)}" data-n="${u.n}">Undo sale</button>`;
@@ -2974,6 +2990,7 @@ async function changeStatus(it, n, status) {
     delete t.sale; delete t.costBasisSnapshot;
     t.status = status;
     if (status === 'listed' && !(t.listedOn || []).length) t.listedOn = [S.platform];
+    if (status === 'draft') t.listedOn = [];
   }
   await setUnits(it, units);
 }
@@ -3196,6 +3213,17 @@ const ACT = {
     const u = it.units.find((x) => x.n === n);
     await changeStatus(it, n, u && (u.listedOn || []).length ? 'listed' : 'draft');
   },
+  'toggle-listed': async (el) => {
+    const it = S.items.get(el.dataset.id); if (!it || S.readOnly) return;
+    const units = clone(it.units);
+    const u = units.find((x) => x.n === +el.dataset.n);
+    if (!u || (u.status !== 'draft' && u.status !== 'listed')) return;
+    const set = new Set(u.status === 'listed' ? u.listedOn || [] : []);
+    if (set.has(el.dataset.p)) set.delete(el.dataset.p); else set.add(el.dataset.p);
+    u.listedOn = Core.PLATFORMS.filter((k) => set.has(k));
+    u.status = u.listedOn.length ? 'listed' : 'draft';
+    await setUnits(it, units);
+  },
   sel: (el) => {
     const pid = el.dataset.pid, from = el.dataset.from;
     const i = S.sel.findIndex((s) => s.pid === pid && s.from === from);
@@ -3284,15 +3312,6 @@ const CHG = {
   boost: (el) => saveSettings({ ui: { depopBoost: el.checked } }),
   'bag-cost': (el) => { const v = parseMoney(el.value); if (v == null || v < 0) { toast('Enter what you paid.'); return; } saveBag(el.dataset.id, { purchaseCost: v }); },
   'unit-status': (el) => { const it = S.items.get(el.dataset.id); if (it) changeStatus(it, +el.dataset.n, el.value); },
-  'unit-listed': async (el) => {
-    const it = S.items.get(el.dataset.id); if (!it) return;
-    const units = clone(it.units);
-    const u = units.find((x) => x.n === +el.dataset.n);
-    const set = new Set(u.listedOn || []);
-    if (el.checked) set.add(el.dataset.p); else set.delete(el.dataset.p);
-    u.listedOn = Core.PLATFORMS.filter((k) => set.has(k));
-    await setUnits(it, units);
-  },
   'unit-size': async (el) => {
     const it = S.items.get(el.dataset.id); if (!it) return;
     const units = clone(it.units);
