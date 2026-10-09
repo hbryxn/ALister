@@ -1114,6 +1114,43 @@ main > .btn, main > form > .row > .btn { align-self: flex-start; }
     return sample;
   }
 
+  /* ---------------- sample through the viewer's Claude account (claude.ai artifact) ---------------- */
+  // Inside claude.ai the page cannot reach api.anthropic.com; Claude calls go through the
+  // platform's `sample` capability instead and run on the signed-in viewer's own Claude plan.
+  function makeClaudeAccountSample(cs) {
+    const opts = (o) => {
+      o = o || {};
+      const out = {};
+      if (o.images) out.images = o.images;
+      if (o.signal) out.signal = o.signal;
+      if (o.onText) out.onText = o.onText;
+      if (o.cache !== undefined) out.cache = o.cache;
+      out.modelTier = o.modelTier === 'complex' ? 'complex' : 'default'; // reading photos carefully needs more than the quick tier
+      return out; // no JSON schema here: replies are parsed tolerantly and validated by the app
+    };
+    const sample = (prompt, o) => cs(prompt, opts(o));
+    sample.json = (prompt, o) => cs.json(prompt, opts(o));
+    sample.limits = async () => {
+      const l = await cs.limits().catch(() => null);
+      return { maxPromptBytes: (l && l.maxPromptBytes) || 262144, images: l && l.images ? { maxCount: l.images.maxCount, maxInputBytes: l.images.maxInputBytes, mediaTypes: l.images.mediaTypes } : undefined };
+    };
+    sample.ready = () => true;
+    sample.viaClaude = true;
+    sample.models = null;
+    sample.test = async () => ({ ok: true });
+    return sample;
+  }
+  function makeUnavailableSample(code) {
+    const fail = async () => { throw { code, message: 'Claude is not available here.' }; };
+    const sample = fail;
+    sample.json = fail;
+    sample.limits = async () => ({ maxPromptBytes: 262144 });
+    sample.ready = () => false;
+    sample.viaClaude = true;
+    sample.unavailable = code;
+    return sample;
+  }
+
   /* ---------------- open ---------------- */
   async function open() {
     const idb = await openIdb();
@@ -1132,10 +1169,18 @@ main > .btn, main > form > .row > .btn { align-self: flex-start; }
     const config = { apiKey: (await kvGet('apiKey')) || '', model: (await kvGet('model')) || 'claude-opus-5-5' };
     const db = makeDb(idb, initial);
     const assets = makeAssets(idb, sizes);
-    const sample = root.__mockSample || makeSample(() => config);
+    // In claude.ai (artifact) mode, Claude comes from the viewer's account; elsewhere from their API key.
+    const inClaude = !!(root.claude && typeof root.claude.use === 'function');
+    let sample, downloads = null;
+    if (root.__mockSample) sample = root.__mockSample;
+    else if (inClaude) {
+      const [cs, dl] = await Promise.all([root.claude.use('sample').catch(() => null), root.claude.use('downloads').catch(() => null)]);
+      sample = cs ? makeClaudeAccountSample(cs) : makeUnavailableSample('not_signed_in');
+      downloads = dl;
+    } else sample = makeSample(() => config);
     try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { /* optional */ }
     return {
-      db, assets, sample,
+      db, assets, sample, downloads, inClaude,
       user: { id: async () => 'local', isOwner: async () => true, canEdit: async () => true, can: async () => true },
       config,
       async setConfig(patch) { Object.assign(config, patch); for (const k of Object.keys(patch)) await kvSet(k, patch[k] || null); },
@@ -1173,13 +1218,22 @@ const DEFAULT_SETTINGS = {
   highValueThreshold: 300,
   ui: { depopBoost: false, feeBannerDismissedAt: null, welcomed: false }
 };
-// Bundled with the app (see build.js) so the desktop version works offline.
-const LIBS = {
+// Bundled with the app (see build.js) so the desktop version works offline. Inside claude.ai only
+// allowlisted CDNs can serve scripts, so the artifact build loads the same pinned versions from there.
+const IN_CLAUDE = !!(window.claude && typeof window.claude.use === 'function');
+const LIBS = IN_CLAUDE ? {
+  pdf: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js',
+  pdfWorker: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js',
+  jszip: 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js',
+  heic: 'https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js'
+} : {
   pdf: 'vendor/pdf.min.js',
   pdfWorker: 'vendor/pdf.worker.min.js',
   jszip: 'vendor/jszip.min.js',
   heic: 'vendor/heic2any.min.js'
 };
+// The claude.ai version of this app: people without an API key use it with their Claude account.
+const CLAUDE_APP_URL = 'https://claude.ai/artifact/Y1gQbV2LFXo9TKKDWtZASo';
 const FULL_EDGE = 2048, FULL_EDGE_SMALL = 1600, THUMB_EDGE = 320;
 const EST_FULL_BYTES = 520 * 1024, EST_THUMB_BYTES = 28 * 1024;
 const STATUS_LABEL = { draft: 'Draft', listed: 'Listed', sold: 'Sold', kept: 'Kept', donated: 'Donated' };
@@ -1663,8 +1717,9 @@ async function runIngest() {
 const STOP_CODES = ['rate_limited', 'session_expired', 'not_granted', 'sampling_disabled', 'not_declared', 'capability_disabled', 'capability_removed', 'images_unavailable',
   'no_key', 'auth', 'billing', 'permission', 'model_unavailable', 'offline'];
 // Codes that keep failing until the user changes something in Settings.
-const BLOCKING_CODES = ['auth', 'billing', 'permission', 'model_unavailable', 'no_key', 'capability_disabled'];
+const BLOCKING_CODES = ['auth', 'billing', 'permission', 'model_unavailable', 'no_key', 'capability_disabled', 'not_granted', 'sampling_disabled', 'not_declared', 'capability_removed', 'images_unavailable'];
 const SAMPLE_MSG = {
+  not_signed_in: 'Sign in to your Claude account to let Claude read your photos. You can still enter listings by hand.',
   no_key: 'Add your Anthropic API key in Settings to let Claude read your photos.',
   auth: 'Anthropic rejected the API key. Check it in Settings.',
   billing: 'Anthropic reports a billing problem with this API key, such as no credit left. Add credit in the Anthropic Console, then tap Resume.',
@@ -1672,7 +1727,7 @@ const SAMPLE_MSG = {
   model_unavailable: 'The chosen Claude model is not available to this API key. Pick another model in Settings.',
   offline: 'Could not reach Anthropic. Check the internet connection, then tap Resume.',
   invalid_request: 'Anthropic rejected this step as malformed.',
-  rate_limited: 'Anthropic is limiting how fast this key can make requests. Everything so far is saved. Tap Resume in a few minutes.',
+  rate_limited: IN_CLAUDE ? 'You have reached your Claude usage limit for now. Everything so far is saved. Tap Resume when your limit resets.' : 'Anthropic is limiting how fast this key can make requests. Everything so far is saved. Tap Resume in a few minutes.',
   session_expired: 'Your Claude session expired. Sign in again, then tap Resume.',
   not_granted: 'Claude was not allowed for this page, so analysis is off. You can still enter listings by hand.',
   sampling_disabled: 'Claude is not available on this account, so analysis is off. You can still enter listings by hand.',
@@ -2249,7 +2304,9 @@ const signed = (n) => `<span class="v num ${n < 0 ? 'neg' : n > 0 ? 'pos' : ''}"
 function capabilityNotices() {
   const out = [];
   if (S.sampleBlocked) out.push(`<div class="notice warn"><p>${esc(SAMPLE_MSG[S.sampleBlocked] || 'Claude is not available, so analysis is off.')}</p><button class="btn small" data-act="nav" data-to="settings">Open Settings</button></div>`);
-  else if (S.sample && !S.sample.ready() && S.route.view !== 'settings') out.push(`<div class="notice warn"><p><b>Add your Anthropic API key</b> so Claude can read your photos and write listings. Until then you can still enter listings by hand and track sales.</p><button class="btn small" data-act="nav" data-to="settings">Add API key</button></div>`);
+  else if (S.sample && S.sample.viaClaude && !S.sample.ready()) out.push(`<div class="notice warn"><p>${esc(SAMPLE_MSG[S.sample.unavailable] || SAMPLE_MSG.not_signed_in)}</p></div>`);
+  else if (S.sample && !S.sample.ready() && S.route.view !== 'settings') out.push(`<div class="notice warn"><p><b>Claude needs a way to read your photos.</b> Add an Anthropic API key, or use Resale Lister inside your Claude account instead, with no key needed. Until then you can still enter listings by hand and track sales.</p>
+    <div class="row"><button class="btn small" data-act="nav" data-to="settings">Add API key</button>${claudeAccountLink('btn small')}</div></div>`);
   const s = settings();
   const age = s.feesCheckedAt ? Core.daysBetween(s.feesCheckedAt, today()) : 999;
   const dismissed = s.ui.feeBannerDismissedAt && Core.daysBetween(s.ui.feeBannerDismissedAt, today()) < 30;
@@ -2258,13 +2315,20 @@ function capabilityNotices() {
   return out.join('');
 }
 
+/** Link to the claude.ai version, where Claude runs on the viewer's own Claude plan. */
+function claudeAccountLink(cls) {
+  return `<a class="${cls}" href="${CLAUDE_APP_URL}" target="_blank" rel="noopener">Use my Claude account instead</a>`;
+}
+
 /* ---------- welcome ---------- */
 function welcomeHtml() {
   return `<section class="panel empty">
     <h1>Resale Lister</h1>
     <p class="muted">Turn a bag of clothing photos into listings for eBay, Depop and Vinted, then track every piece until it sells.</p>
     <div class="steps3">
-      <div><b>1. Add your API key</b><span>Claude reads the photos using your own Anthropic API key. You pay Anthropic for what you use.</span></div>
+      ${S.sample && S.sample.viaClaude
+        ? '<div><b>1. Signed in with Claude</b><span>Claude reads the photos on your own Claude plan. No API key needed.</span></div>'
+        : `<div><b>1. Connect Claude</b><span>Add your own Anthropic API key (you pay Anthropic for what you use), or ${claudeAccountLink('')} with no key.</span></div>`}
       <div><b>2. Drop your photos</b><span>A whole pile at once: camera roll shots, a folder, a PDF of photos, or a ZIP. Claude finds every item and writes the listings.</span></div>
       <div><b>3. Copy listings</b><span>Copy each title, description and price into eBay, Depop or Vinted. Mark pieces listed and sold to track profit.</span></div>
     </div>
@@ -2641,8 +2705,14 @@ function settingsHtml() {
   const age = s.feesCheckedAt ? Core.daysBetween(s.feesCheckedAt, today()) : null;
   const cfg = S.rt ? S.rt.config : { apiKey: '', model: 'claude-opus-5-5' };
   const masked = cfg.apiKey ? cfg.apiKey.slice(0, 10) + '…' + cfg.apiKey.slice(-4) : '';
+  const claudeSection = S.sample && S.sample.viaClaude ? `<section class="panel stack" id="claude">
+    <div class="spread"><h2>Claude</h2><span class="chip ${S.sample.ready() && !S.sampleBlocked ? 'ok' : 'warn'}">${S.sample.ready() && !S.sampleBlocked ? 'Using your Claude account' : 'Not available'}</span></div>
+    <p class="small">Claude reads your photos on your own Claude plan, through the Claude account you're signed in with. No API key is needed. The first time, Claude asks you to allow this page to use it.</p>
+    <p class="small muted">Large bags use more of your plan. If you hit your usage limit, everything so far is saved and Resume picks up when your limit resets.</p>
+    <label class="check"><input type="checkbox" data-change="boolsetting" data-key="autoProcess" ${s.autoProcess ? 'checked' : ''}> Find items and write listings as soon as photos are added</label>
+  </section>` : null;
   return `${capabilityNotices()}<h1>Settings</h1>
-  <section class="panel stack" id="claude">
+  ${claudeSection || `<section class="panel stack" id="claude">
     <div class="spread"><h2>Claude</h2><span class="chip ${cfg.apiKey ? (S.sampleBlocked ? 'bad' : 'ok') : 'warn'}">${cfg.apiKey ? (S.sampleBlocked ? 'Key needs attention' : 'API key saved') : 'No API key yet'}</span></div>
     <p class="small">Claude reads your photos with your own Anthropic API key. Anthropic bills the key's account for what you use; a big bag costs more than a small one.</p>
     <ol class="small muted">
@@ -2660,8 +2730,9 @@ function settingsHtml() {
       <p class="small muted" id="key-status" aria-live="polite"></p>
     </form>
     <p class="small muted">The key is stored only on this device and is sent only to Anthropic. Anyone who can open this app on this device can use it.</p>
+    <p class="small">No API key? ${claudeAccountLink('')} and Claude runs on your Claude plan. Data doesn't move between the two on its own; use Back up and Restore below.</p>
     <label class="check"><input type="checkbox" data-change="boolsetting" data-key="autoProcess" ${s.autoProcess ? 'checked' : ''}> Find items and write listings as soon as photos are added</label>
-  </section>
+  </section>`}
   <section class="panel stack" id="fees">
     <div class="spread"><h2>Platform fees</h2><span class="chip ${age != null && age <= 90 ? 'ok' : 'warn'}">Last checked: ${s.feesCheckedAt ? esc(fmtDate(s.feesCheckedAt)) : 'never'}</span></div>
     <p class="small muted">US seller fees. Changing them never changes the fees saved on past sales.</p>
@@ -3279,7 +3350,13 @@ async function quickStart(files) {
   startIngest(id, files);
 }
 
-function downloadBlob(blob, filename) {
+async function downloadBlob(blob, filename) {
+  // Inside claude.ai, pages can't start downloads themselves; the platform asks the viewer to save the file.
+  if (S.rt && S.rt.inClaude) {
+    if (!S.rt.downloads) throw new Error('Saving files is not available in this view.');
+    try { await S.rt.downloads.save({ filename, data: blob }); return; }
+    catch (e) { throw new Error(e && e.code === 'declined' ? 'Save cancelled.' : (e && e.message) || 'Could not save the file.'); }
+  }
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
@@ -3301,7 +3378,7 @@ async function backupZip() {
       if (i % 50 === 0) say('Packing photos ' + i + ' of ' + ids.length + '…');
     }
     const blob = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
-    downloadBlob(blob, 'resale-lister-backup-' + today() + '.zip');
+    await downloadBlob(blob, 'resale-lister-backup-' + today() + '.zip');
     say('Backup saved (' + (blob.size / 1048576).toFixed(0) + ' MB, ' + plural(ids.length, 'photo file') + ').');
   } catch (e) { say('Backup failed: ' + (e.message || e)); }
 }
