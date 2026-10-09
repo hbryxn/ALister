@@ -1,0 +1,24 @@
+{
+  "name": "Resale Lister",
+  "short_name": "Resale Lister",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#e9e6ef",
+  "theme_color": "#6a2c5b",
+  "description": "Turn a pile of clothing photos into eBay, Depop and Vinted listings.",
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
