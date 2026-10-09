@@ -1,6 +1,6 @@
 /* Service worker: makes the web app installable and usable offline (the app shell and libraries).
    Claude calls always go to the network. */
-const CACHE = 'resale-lister-1.1.0';
+const CACHE = 'alister-1.1.0';
 const SHELL = ["./","./index.html","./fonts/bricolage-grotesque.woff2","./fonts/public-sans-400.woff2","./fonts/public-sans-600.woff2","./fonts/public-sans-700.woff2","./icons/apple-180.png","./icons/icon-192.png","./icons/icon-512.png","./manifest.webmanifest","./vendor/anthropic.js","./vendor/heic2any.min.js","./vendor/jszip.min.js","./vendor/pdf.min.js","./vendor/pdf.worker.min.js"];
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));

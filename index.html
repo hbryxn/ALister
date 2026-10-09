@@ -4,12 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; worker-src 'self' blob:; connect-src 'self' https://api.anthropic.com blob: data:; img-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; font-src 'self'; object-src 'none'; base-uri 'self'">
-<title>Resale Lister</title>
+<title>ALister</title>
 <meta name="description" content="Turn a pile of clothing photos into eBay, Depop and Vinted listings, then track every piece to sold.">
 <meta name="theme-color" content="#6a2c5b">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Resale Lister">
+<meta name="apple-mobile-web-app-title" content="ALister">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-180.png">
@@ -295,7 +295,7 @@ main > .btn, main > form > .row > .btn { align-self: flex-start; }
 </head>
 <body>
 <header class="bar"><div class="bar-in">
-  <button class="brand" data-act="nav" data-to="home"><span class="tag-mini" aria-hidden="true"></span>Resale Lister</button>
+  <button class="brand" data-act="nav" data-to="home"><span class="tag-mini" aria-hidden="true"></span>ALister</button>
   <nav id="nav" aria-label="Main"></nav>
 </div></header>
 <main id="main"><div class="loading">Loading your inventory…</div></main>
@@ -304,7 +304,7 @@ main > .btn, main > form > .row > .btn { align-self: flex-start; }
 
 <script src="vendor/anthropic.js"></script>
 <script>
-/* Resale Lister core: pure functions only (no DOM, no network).
+/* ALister core: pure functions only (no DOM, no network).
    Loaded inline by the page and by tests/core.test.js under Node. */
 (function (root) {
   'use strict';
@@ -822,7 +822,7 @@ main > .btn, main > form > .row > .btn { align-self: flex-start; }
       };
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
-      req.onblocked = () => reject(new Error('Close other Resale Lister windows and reload.'));
+      req.onblocked = () => reject(new Error('Close other ALister windows and reload.'));
     });
   }
   const txDone = (tx) => new Promise((resolve, reject) => { tx.oncomplete = resolve; tx.onerror = () => reject(tx.error); tx.onabort = () => reject(tx.error); });
@@ -1274,7 +1274,7 @@ function toast(msg, ms) {
   el.textContent = msg; el.hidden = false;
   clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.hidden = true; }, ms || 2600);
 }
-function devLog() { if (DEV) console.info('[resale-lister]', ...arguments); }
+function devLog() { if (DEV) console.info('[alister]', ...arguments); }
 
 const libCache = {};
 function loadScript(url) {
@@ -2285,7 +2285,7 @@ function navHtml() {
 
 function viewHtml() {
   if (!S.booted) return '<div class="loading">Loading your inventory…</div>';
-  if (S.bootError || !S.db) return `<div class="notice bad"><p><b>Resale Lister couldn't open its storage on this device.</b> ${esc(S.bootError || '')} Private or incognito windows often block storage; open it in a normal window.</p></div>`;
+  if (S.bootError || !S.db) return `<div class="notice bad"><p><b>ALister couldn't open its storage on this device.</b> ${esc(S.bootError || '')} Private or incognito windows often block storage; open it in a normal window.</p></div>`;
   if (S.settingsExists === null) return '<div class="loading">Loading your inventory…</div>';
   if (S.settingsExists === false) return welcomeHtml();
   switch (S.route.view) {
@@ -2305,7 +2305,7 @@ function capabilityNotices() {
   const out = [];
   if (S.sampleBlocked) out.push(`<div class="notice warn"><p>${esc(SAMPLE_MSG[S.sampleBlocked] || 'Claude is not available, so analysis is off.')}</p><button class="btn small" data-act="nav" data-to="settings">Open Settings</button></div>`);
   else if (S.sample && S.sample.viaClaude && !S.sample.ready()) out.push(`<div class="notice warn"><p>${esc(SAMPLE_MSG[S.sample.unavailable] || SAMPLE_MSG.not_signed_in)}</p></div>`);
-  else if (S.sample && !S.sample.ready() && S.route.view !== 'settings') out.push(`<div class="notice warn"><p><b>Claude needs a way to read your photos.</b> Add an Anthropic API key, or use Resale Lister inside your Claude account instead, with no key needed. Until then you can still enter listings by hand and track sales.</p>
+  else if (S.sample && !S.sample.ready() && S.route.view !== 'settings') out.push(`<div class="notice warn"><p><b>Claude needs a way to read your photos.</b> Add an Anthropic API key, or use ALister inside your Claude account instead, with no key needed. Until then you can still enter listings by hand and track sales.</p>
     <div class="row"><button class="btn small" data-act="nav" data-to="settings">Add API key</button>${claudeAccountLink('btn small')}</div></div>`);
   const s = settings();
   const age = s.feesCheckedAt ? Core.daysBetween(s.feesCheckedAt, today()) : 999;
@@ -2323,7 +2323,7 @@ function claudeAccountLink(cls) {
 /* ---------- welcome ---------- */
 function welcomeHtml() {
   return `<section class="panel empty">
-    <h1>Resale Lister</h1>
+    <h1>ALister</h1>
     <p class="muted">Turn a bag of clothing photos into listings for eBay, Depop and Vinted, then track every piece until it sells.</p>
     <div class="steps3">
       ${S.sample && S.sample.viaClaude
@@ -2780,7 +2780,7 @@ function settingsHtml() {
   </section>
   <section class="panel stack">
     <h2>About</h2>
-    <p class="small">Resale Lister version ${VERSION}</p>
+    <p class="small">ALister version ${VERSION}</p>
     <ul class="small">${WHATS_NEW.map((w) => `<li>${esc(w)}</li>`).join('')}</ul>
     <p class="small muted">Prices are Claude's estimates, not live comps; use each item's sold-prices link to check. Claude can misread small tags, which is why fields from blurry photos are marked Needs info. Listings never claim authenticity; that is the seller's responsibility.</p>
   </section>`;
@@ -3093,7 +3093,7 @@ function editBagSheet(bag) {
 
 async function exportData() {
   toast('Preparing export…');
-  const data = { app: 'Resale Lister', version: VERSION, exportedAt: nowIso(), settings: S.settings, bags: [], items: [...S.items.values()] };
+  const data = { app: 'ALister', version: VERSION, exportedAt: nowIso(), settings: S.settings, bags: [], items: [...S.items.values()] };
   for (const bag of S.bags.values()) {
     let photos = [];
     try { photos = (await R.photos(bag.id).get()).docs.map((d) => d.data()); } catch (e) { /* skip */ }
@@ -3369,7 +3369,7 @@ async function backupZip() {
     say('Packing your data…');
     await loadScript(LIBS.jszip);
     const zip = new window.JSZip();
-    zip.file('resale-lister.json', JSON.stringify({ app: 'Resale Lister', version: VERSION, exportedAt: nowIso(), docs: S.rt.db._dump() }));
+    zip.file('resale-lister.json', JSON.stringify({ app: 'ALister', version: VERSION, exportedAt: nowIso(), docs: S.rt.db._dump() }));
     const ids = S.assets.ids();
     const folder = zip.folder('photos');
     for (let i = 0; i < ids.length; i++) {
@@ -3378,7 +3378,7 @@ async function backupZip() {
       if (i % 50 === 0) say('Packing photos ' + i + ' of ' + ids.length + '…');
     }
     const blob = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
-    await downloadBlob(blob, 'resale-lister-backup-' + today() + '.zip');
+    await downloadBlob(blob, 'alister-backup-' + today() + '.zip');
     say('Backup saved (' + (blob.size / 1048576).toFixed(0) + ' MB, ' + plural(ids.length, 'photo file') + ').');
   } catch (e) { say('Backup failed: ' + (e.message || e)); }
 }
@@ -3392,7 +3392,7 @@ async function restoreBackup(file) {
     await loadScript(LIBS.jszip);
     const zip = await window.JSZip.loadAsync(file);
     const meta = zip.file('resale-lister.json');
-    if (!meta) throw new Error('This ZIP is not a Resale Lister backup.');
+    if (!meta) throw new Error('This ZIP is not a ALister backup.');
     const data = JSON.parse(await meta.async('string'));
     const photos = Object.values(zip.files).filter((f) => !f.dir && /^photos\/[0-9a-f]+\.jpg$/.test(f.name));
     for (let i = 0; i < photos.length; i++) {

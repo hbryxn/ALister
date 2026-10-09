@@ -1,6 +1,6 @@
 {
-  "name": "Resale Lister",
-  "short_name": "Resale Lister",
+  "name": "ALister",
+  "short_name": "ALister",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
